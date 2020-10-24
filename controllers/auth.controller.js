@@ -1,5 +1,6 @@
 const User = require("../models/user.model");
 const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
 exports.signUp = async (req, res, next) => {
   const fullName = req.body.fullName;
@@ -16,13 +17,34 @@ exports.signUp = async (req, res, next) => {
       friends: [],
     });
 
-    user.save((err) => {
+    await user.save((err) => {
       if (err) {
-        res.status(500).send("Failed to create new user. Try again.");
+        res
+          .status(500)
+          .json({ message: "Failed to create new user. Try again." });
       }
-      res.status(201).send("User created successfully.");
+      res.status(201).json({ message: "User created successfully." });
     });
   } catch (err) {
     next(err);
+  }
+};
+
+exports.signIn = async (req, res) => {
+  const email = req.body.email;
+  const password = req.body.password;
+
+  const user = await User.findOne({ email: email });
+  if (user) {
+    if (bcrypt.compareSync(password, user.password)) {
+      const token = jwt.sign({ userId: user._id.toString() }, "test", {
+        expiresIn: "1h",
+      });
+      res.status(200).json({ message: "Login successfully", token });
+    } else {
+      res.status(401).json({ message: "Invalid password" });
+    }
+  } else {
+    res.status(401).json({ message: "Invalid email" });
   }
 };
