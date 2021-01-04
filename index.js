@@ -5,12 +5,40 @@ const users = require("./routes/users.routes");
 const auth = require("./routes/auth.routes");
 const chat = require("./routes/chat.routes");
 const db = require("./models/index");
+const http = require("http");
+const socketio = require("socket.io");
 
-const app = express();
 const port = 3001;
 const corsOption = {
   origin: "http://localhost:3000",
 };
+
+const app = express();
+const server = http.createServer(app);
+const io = socketio(server, {
+  cors: {
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"],
+  },
+});
+
+io.on("connection", (socket) => {
+  console.log("New connection");
+  socket.on("join", (roomId) => {
+    socket.join(roomId);
+  });
+  socket.on("sendMessage", (data, callback) => {
+    io.to(data.roomId).emit("message", {
+      _id: Math.random() * 1000,
+      content: data.messageInput,
+      userId: data.userId,
+    });
+    callback();
+  });
+  socket.on("disconnect", () => {
+    console.log("User left");
+  });
+});
 
 db.mongoose
   .connect(db.url, {
@@ -32,10 +60,4 @@ app.use(users);
 app.use(auth);
 app.use(chat);
 
-app.get("/", (req, res) => {
-  res.status(200).json({ message: "Hello world" });
-});
-
-app.listen(port, () => {
-  console.log("Working");
-});
+server.listen(port);
