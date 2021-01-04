@@ -3,8 +3,11 @@ const Schema = mongoose.Schema;
 
 const MessageSchema = new Schema({
   content: String,
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Users",
+  },
   timestamp: Date,
-  userId: String,
 });
 
 module.exports = MessageSchema;
