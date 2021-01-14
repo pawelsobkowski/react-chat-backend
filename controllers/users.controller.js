@@ -1,6 +1,7 @@
 const { mongoose } = require("../models");
 const User = require("../models/user.model");
 const Chat = require("../models/chat.model");
+const bcrypt = require("bcrypt");
 
 exports.usersFindAll = (req, res) => {
   User.find((err, users) => {
@@ -50,21 +51,68 @@ exports.usersFindByName = async (req, res) => {
   }
 };
 
-exports.updateUser = (req, res) => {
-  User.findByIdAndUpdate(req.params.id, { $set: req.body }, (err) => {
-    if (err) {
-      res.send(err);
+exports.updateUser = async (req, res) => {
+  const fieldsToUpdate = {};
+
+  if (
+    req.body.hasOwnProperty("currentPassword") &&
+    req.body.hasOwnProperty("password")
+  ) {
+    const currentPassword = req.body.currentPassword;
+    const { password } = await User.findOne(
+      { _id: req.params.id },
+      "-_id password"
+    );
+    const isMatch = await bcrypt.compare(currentPassword, password);
+    if (!isMatch) {
+      res.status(403).json({ message: "Invalid password" });
+      return;
     }
-    res.send("User updated.");
+    fieldsToUpdate["password"] = await bcrypt.hash(req.body.password, 10);
+  }
+
+  if (Object.keys(req.body).length !== 0) {
+    for (const [key, value] of Object.entries(req.body)) {
+      if (key !== "currentPassword" && key !== "password") {
+        fieldsToUpdate[key] = value;
+      }
+    }
+  }
+
+  User.updateOne({ _id: req.params.id }, fieldsToUpdate, (err) => {
+    if (err) {
+      res.status(400).json({ message: err });
+    }
+    res.status(200).json({ message: "Updated successfully" });
   });
 };
 
 exports.deleteUser = (req, res) => {
-  User.findByIdAndRemove(req.params.id, (err) => {
+  Chat.deleteMany({ participants: req.params.id }, (err) => {
     if (err) {
-      res.send(err);
+      res.status(400).json({ message: err });
     }
-    res.send("User deleted.");
+    User.updateMany(
+      { friends: req.params.id },
+      {
+        $pull: {
+          friends: mongoose.Types.ObjectId(req.params.id),
+          invitations: mongoose.Types.ObjectId(req.params.id),
+          requests: mongoose.Types.ObjectId(req.params.id),
+        },
+      },
+      (err) => {
+        if (err) {
+          res.send(err);
+        }
+        User.deleteOne({ _id: req.params.id }, (err) => {
+          if (err) {
+            res.status(400).json({ message: err });
+          }
+          res.status(200).json({ message: "Account deleted" });
+        });
+      }
+    );
   });
 };
 
@@ -102,7 +150,7 @@ exports.acceptInvitation = (req, res) => {
         friends: [mongoose.Types.ObjectId(req.body.id)],
       },
       $pull: {
-        invitations: req.body.id,
+        invitations: mongoose.Types.ObjectId(req.body.id),
       },
     },
     (err) => {
@@ -116,22 +164,29 @@ exports.acceptInvitation = (req, res) => {
             friends: [mongoose.Types.ObjectId(req.body.userId)],
           },
           $pull: {
-            requests: req.body.id,
+            requests: mongoose.Types.ObjectId(req.body.id),
           },
         },
         (err) => {
           if (err) {
             res.send(err);
           }
+          const m = {
+            content: "New contact. Say Hi",
+            userId: req.body.id,
+            timestamp: new Date(),
+          };
+
           const chat = new Chat({
             participants: [
               mongoose.Types.ObjectId(req.body.userId),
               mongoose.Types.ObjectId(req.body.id),
             ],
-            messages: [],
+            messages: [m],
           });
           chat.save((err) => {
             if (err) {
+              console.log(err);
               res.json({ message: "Cannot initate chat room." });
             }
             res.status(200).json({ message: "New contact has been added" });
